@@ -1,0 +1,9 @@
+- Fix grid after generating
+
+-> Steps:
+
+->> Check for too many vowels; if too many, adjust proportions
+
+->> Check for NO vowels; if that's the case, add some
+
+->> Check for "q"; change random letter to "i" if present

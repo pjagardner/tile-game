@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<script type="text/javascript" src="target/cljsbuild-main.js"></script>
+		<script type="text/javascript">goog.require('letters');</script>
+		<script src="http://code.jquery.com/jquery-1.9.1.js"></script>
+		<script src="http://code.jquery.com/ui/1.10.3/jquery-ui.js"></script>
+		<title>Peter's Letter Program in ClojureScript</title>
+		<meta charset='utf-8'>
+		<style>
+			body {font-size: 32pt}
+			#hand td, #board td {
+				width: 2em;
+				height: 2em;
+				background-color: silver}
+			td {
+				text-align: center;
+				text-transform: uppercase}
+			#hand td {line-height: 2em; min-width: 1em; max-width: 2em; text-align: center}
+			#board {background-color: white}
+			td.selected {background-color: #00e600}
+			td.null {visibility: hidden}
+/*			.player {background-color: silver}*/
+			td.hidden {visibility: hidden}
+			#hand {height: 2.3em}
+			table {margin-left: auto; margin-right: auto}
+			#board td {position: relative}
+			#board td span {position: absolute; bottom: 0; right: 4pt; font-size: 14pt; color: white; pointer-events: none}
+			#hand td {position: relative}
+			#hand td span {position: absolute; height: 60%; bottom: 0; right: 4pt; font-size: 14pt; color: white; pointer-events: none}
+			#buttonlist {width: 100%}
+			#buttonlist td {font-size: 12pt}
+			#scores {margin-left: auto; margin-right: auto}
+			#scores td {width: 3em; background-color: white}
+			#played-words {width: 100%; border-spacing: 10px}
+			#played-words td {background-color: white; height: auto; font-size: 16pt; word-spacing: 1000pt; margin-left: auto; margin-right: auto; vertical-align: top}
+			#played-words th {border-bottom: thin solid silver}
+			#alert {color: black; font-size: 12pt; width: 100%; text-align: center}
+			#played-words th.current {border-bottom: thick solid black}
+			#sortable .ui-sortable-helper {text-align: center; line-height: 2em}
+			.ui-sortable-placeholder {display: inline-block; height: 1px}
+			
+		</style>
+	</head>
+	<body>
+		<table id="buttonlist">
+			<tbody>
+				<tr>
+					<td><button id="pass">Pass</button></td>
+					<td><button id="clear">Clear</button></td>
+					<td><button id="submit">Submit</button></td>
+				</tr>
+			</tbody>
+		</table>
+		<table id="hand" class="sortable">
+			<tbody>
+				<tr>
+			</tbody>
+		</table>
+		<div id="alert"></div>
+		<hr>
+		<table id="board">
+			<tbody/>
+		</table>
+		<hr>
+		<table id="played-words">
+			<thead>
+				<tr/>
+			</thead>
+			<tbody>
+				<tr/>
+			</tbody>
+		</table>
+		<script>
+		foo = function() {
+			$( "#hand" ).sortable({
+				distance: 3,
+				delay: 0,
+				tolerance: "pointer",
+				items: "td",
+				start: letters.sortChange});
+//				change: letters.sortChange,
+//				out: letters.sortChange});
+			$( "#hand" ).disableSelection();};
+		foo();
+		letters.main();
+		</script>
+	</body>
+</html>

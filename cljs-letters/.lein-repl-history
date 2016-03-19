@@ -1,0 +1,500 @@
+;;(let [word (move->word move)]
+;;(and
+;;(not (some (partial is-prefix? word) @played-words))
+;;(dict word))))
+(defn hand-table->word []
+(apply str (map dom/text (dom/children (css/sel "#hand tbody tr")))))
+(defn neighbors [{[row col] :pos} grid]
+(keep (partial get-in grid) [
+[(dec row) col]
+[row (dec col)]
+[(inc row) col]
+[row (inc col)]]))
+(defn tile-near-territory? [tile]
+(< 0 (count (filter (comp (partial = @current-player) :player) (neighbors tile @current-grid)))))
+(defn valid-move? []
+(let [word (hand-table->word)]
+(cond
+(some (partial is-prefix? word) @played-words)
+[false :prefix]
+(not (dict word))
+[false :dict]
+:else
+[true])))
+;;(defn apply-move [move grid player]
+;;(reduce (fn [grid [x y]] (assoc-in grid [x y :player] player)) grid move))
+;;(defn main-loop [player grid]
+;;(println (grid->str grid))
+;;(let [move (parse-move (prompt (format "Next word (player %d)" player)))]
+;;(recur
+;;(mod (inc player) 2)
+;;(if (valid-move? move grid)
+;;(apply-move move grid player)
+;;(do
+;;(println "Not a valid move!")
+;;grid)))))
+;;(defn -main []
+;;(main-loop 0
+;;(make-grid 
+;;(read-string (prompt "Width"))
+;;(read-string (prompt "Height")))))
+(defn get-tile [td]
+(get-in @grid (map js/parseInt (rest (str/split (dom/attr td :id) "-")))))
+(defn grid-alias [hand-tile]
+(get-in @grid (map (:pos hand-tile) [0 1])))
+(declare add-hand-tile!)
+(declare apply-move)
+(defn tile-adjacent? [tile]
+(if (and (> number-of-players (count @played-words)) (= (count @hand) 0))
+true
+(if (tile-near-territory? tile)
+true
+false)))
+(defn select-tile! [tile]
+;;(when (tile-adjacent? tile)
+(add-hand-tile! tile)
+(swap! current-grid apply-move @hand @current-player false)
+(if-not (some (partial identical? tile) @hand)
+(swap! hand conj tile)))
+(defn tile-protected? [tile]
+(and
+(:player tile)
+(apply = (map :player (conj (neighbors tile @grid) tile)))))
+(defn player-score [player]
+(count (filter #{(:id player)} (get-value-list @grid :player))))
+(defn adjust-score [player]
+(loop [i 0 score (player-score player)]
+(if (= i (count @hand))
+score
+(recur (inc i)
+(if (= (:id player) @current-player)
+(if
+(and 
+(not (tile-protected? (@hand i)))
+(not (= (:player (@hand i)) (:id player))))
+(inc score)
+score)
+(if
+(and
+(not (tile-protected? (@hand i)))
+(= (:player (@hand i)) (:id player)))
+(dec score)
+score))))))
+(defn check-scores []
+(let [controllers (get-value-list @grid :player)]
+(vec (for [n (range number-of-players)]
+(count (filter (partial = n) controllers))))))
+(defn set-scores []
+(doseq [n (range number-of-players)]
+(dom/set-text! (css/sel (str "#played-words thead .player" n)) (str (player-score (players n))))))
+(defn mod-text [td func]
+(dom/set-text! td (func (js/parseInt (dom/text td)))))
+(defn mod-scores []
+(doseq [player players]
+(dom/set-text! (css/sel (str "#played-words thead .player" (:id player)))
+(str (adjust-score player)))))
+(defn vec-dissoc [v i]
+(vec (concat (take i v) (drop (inc i) v))))
+(declare redraw-hand)
+(declare redraw-board)
+(declare redraw-tile)
+;;(defn on-hand-click [{td :target}]
+;;(let [
+;;hand-index (js/parseInt (second (str/split (dom/attr td :id) "-")))
+;;hand-tile (@hand hand-index)]
+;;(swap! hand vec-dissoc hand-index)
+;;(mod-score hand-tile "minus")
+;;(redraw-tile hand-tile)
+;;(redraw-hand)))
+;;(defn ^:export setTileMoved []
+;;(swap! tile-moved? (fn [_] false)))
+(defn on-hand-mouse-down [{div :target}]
+(swap! tile-moved? (constantly false)))
+(defn on-hand-mouse-over [{td :target}]
+(swap! tile-moved? (constantly true)))
+(defn on-hand-click [{td :target}]
+(let [
+pos (vec (map js/parseInt (rest (str/split (dom/attr td :id) "-"))))
+hand-tile (first (filter (comp not nil?) (for [tile @hand] (when (= (:pos tile) pos) tile))))
+hand-index (index-in @hand hand-tile)]
+(when-not @tile-moved?
+(swap! hand vec-dissoc hand-index)
+(swap! current-grid apply-move @hand @current-player)
+(swap! tile-moved? (constantly false))
+(mod-scores)
+(redraw-tile hand-tile)
+(dom/destroy! td))))
+(defn on-played-click []
+(js/alert (str "Played words: " @played-words)))
+(defn redraw-hand []
+(let [hand-table (css/sel "#hand tbody tr")]
+(dom/destroy-children! hand-table)
+(doseq [tile-index (range (count @hand))]
+(dom/append! hand-table
+;;(dom/append! (dom/html-to-dom "<td/>")
+(doto (dom/html-to-dom "<td/>")
+(dom/set-text! (:letter (@hand tile-index)))
+(dom/set-attr! :id (str "hand-" tile-index))
+(events/listen! :click on-hand-click)
+(dom/set-classes! 
+(filter identity [
+(str "player" (:player (@hand tile-index)))
+(when (tile-protected? (grid-alias (@hand tile-index))) "protected")])))))))
+;;(defn redraw-hand-tile [td]
+;;(let [tile-index (count @hand)]
+;;(dom/append! hand-table
+;;(dom/append! (dom/html-to-dom "<td/>")
+;;(doto (dom/html-to-dom "<div/>")
+;;(dom/set-text! (:letter (@hand tile-index)))
+;;(dom/set-attr! :id (str "hand-" tile-index))
+(defn ^:export sortChange [{td :target}]
+(swap! tile-moved? (constantly true)))
+(defn add-hand-tile! [grid-tile]
+(let [[col row] (:pos grid-tile)]
+(dom/append! (css/sel "#hand tbody tr")
+;;(dom/append! (dom/html-to-dom "<td/>")
+(doto (dom/html-to-dom "<td/>")
+(dom/set-text! (:letter grid-tile))
+(events/listen! :mousedown on-hand-mouse-down)
+(events/listen! :mouseup on-hand-click)
+(dom/set-attr! :id (str "hand-" col "-" row))
+(dom/set-classes! 
+(filter identity [
+(str "player" (:player grid-tile))
+(when (tile-protected? grid-tile) "protected")]))))))
+;;(REDIPS.drag/init)))
+;;(defn redraw-tile [td]
+;;(let [tile (get-tile td)]
+;;(dom/set-classes! td
+;;(filter identity [
+;;(str "player" (:player tile))
+;;(when (tile-protected? tile) "protected")
+;;(when (some #{tile} @hand) "hidden")]))))
+(defn redraw-tile [tile]
+(let [[y x] (:pos tile)]
+(dom/set-classes! (dom/by-id (format "board-%d-%d" y x))
+(filter identity [
+(str "player" (:player tile))
+(when (tile-protected? tile) "protected")
+(when (some #{tile} @hand) "hidden")]))))
+(defn redraw-board []
+(doseq [td (dom/children (css/sel "#board tr"))]
+(let [tile (get-tile td)]
+(dom/set-classes! td
+(filter identity [
+(str "player" (:player tile))
+(when (tile-protected? tile) "protected")
+(when (some #{tile} @hand) "hidden")])))))
+(defn apply-move [grid move player real?]
+(if real? (swap! played-words conj (hand-table->word)))
+(reduce
+(fn [grid tile]
+(let [[col row] (:pos tile)]
+(if (tile-protected? tile) grid
+(assoc-in grid [col row :player] player))))
+grid
+move))
+(defn on-clear-click []
+(swap! hand (constantly []))
+(swap! current-grid (constantly @grid))
+(set-scores)
+(redraw-board)
+(redraw-hand))
+(defn add-text [element text]
+(let [
+current (dom/text element)
+extra (when-not (= "" current) " ")]
+(dom/set-text! element (str current extra text))))
+(defn on-submit-click []
+(let [
+validity (valid-move?)
+word (hand-table->word)]
+(if (first validity)
+(do
+(swap! grid apply-move @hand @current-player true)
+(add-text (css/sel (str "#played-words tbody .player" @current-player)) (last @played-words))
+(swap! current-player (fn [player] (mod (inc player) number-of-players)))
+(redraw-board)
+(on-clear-click)
+(dom/set-text! (dom/by-id "alert") "")
+(set-scores)
+(set-current-player-indicator @current-player)
+(when (= (apply + (check-scores)) (* (normal-grid-size 0) (normal-grid-size 1)))
+(dom/set-text! (dom/by-id "alert") (format "Player %d has emerged victorious!" (index-in (check-scores) (first (reverse (sort (check-scores)))))))))
+(if (= :dict (second validity))
+(dom/set-text! (dom/by-id "alert") (format "'%s' is not in the current word list." (str/upper-case word)))
+(dom/set-text! (dom/by-id "alert") (format "Your move is invalid, for '%s' has already been played." (str/upper-case (first (filter (partial is-prefix? word) @played-words)))))))))
+(defn on-board-click [{td :target}]
+(let [tile (get-tile td)]
+(select-tile! tile)
+(mod-scores)
+(redraw-tile tile)))
+;;(redraw-hand)))
+(defn make-td [tile row-index col-index]
+(doto (dom/html-to-dom "<td/>")
+(dom/set-text! (str (:letter tile)))
+(dom/set-attr! :id (str "board-" row-index "-" col-index))
+(events/listen! :click on-board-click)))
+(defn make-tr [row row-index]
+(let [node (dom/html-to-dom "<tr/>")]
+(doseq [col-index (range (count row))]
+(dom/append! node (make-td (row col-index) row-index col-index)))
+node))
+(defn fill-table [grid table]
+(doseq [row-index (range (count grid))]
+(dom/append! (css/sel table "tbody")
+(make-tr (grid row-index) row-index))))
+(defn ^:export main []
+(add-to-css)
+(gen-html)
+(set-current-player-indicator 0)
+(swap! grid fix-grid)
+(fill-table @grid (css/sel "#board"))
+(events/listen! (dom/by-id "clear") :click on-clear-click)
+(events/listen! (dom/by-id "submit") :click on-submit-click))
+@grid
+@current-grid
+ls
+(apply-move @grid [{:letter \d, :player 1, :pos [0 0]}] 1 false)
+(apply-move @current-grid [{:letter \d, :player 1, :pos [0 0]}] 1 false)
+(swap! current-grid apply-move [{:letter \d, :player 1, :pos [0 0]}] 1 false)
+(tile-near-territory? {:letter \a, :player nil, :pos [0 1]})
+(filter (comp (partial = 1) :player) (neighbors {:pos [0 1}))
+(filter (comp (partial = 1) :player) (neighbors {:pos [0 1]}))
+(filter (comp (partial = 1) :player) (neighbors {:pos [0 1]} @current-grid))
+((filter (comp #{1} :player) (neighbors {:pos [0 1]} @current-grid))
+)
+(filter (comp #{1} :player) (neighbors {:pos [0 1]} @current-grid))
+@current-grid
+(< 0 1)
+(defn tile-near-territory? [tile player]
+    (pos? (count (filter (comp #{player} :player) (neighbors tile @current-grid)))))
+(seq [])
+(seq [1 23 ])
+(tile-near-territory? {:pos [0 1]} 1)
+(tile-near-territory? {:pos [0 1]} 0)
+(tile-near-territory? {:pos [0 1]} 1)
+(tile-near-territory? {:pos [0 2]} 1)
+(tile-near-territory? {:pos [0 1]} 1)
+(tile-near-territory? {:pos [1 0]} 1)
+(tile-near-territory? {:pos [1 1]} 1)
+(defn tile-near-territory? [tile player]
+    (seq (filter (comp #{player} :player) (neighbors tile @current-grid))))
+(tile-near-territory? {:pos [1 1]} 1)
+(tile-near-territory? {:pos [1 0]} 1)
+(doc swap!)
+@grid
+@current-grid
+(doc repeatedly)
+(#(%) 1)
+((fn [x] x) 1)
+(#(/ 2 1))
+(doc /)
+(defn foofn [x y] [x y])
+(#(foofn 1 2))
+(/ 1 2 1.0)
+(/ 2 1 1.0)
+(doc <)
+(doc reset!)
+(doc mapcat)
+(doc dissoc)
+(dissoc #{:foo} :foo)
+(doc disj)
+(disj #{:foo} :foo)
+(disj #{:foo} :bar)
+(#{:foo} [:foo :bar])
+(doc somefn)
+(doc reduce)
+(doc while)
+(doc if-let)
+(apply or [1 2])
+(doc recur)
+((fn ([x] x 1) ([x y] (+ x y))) 2)
+(doc cond)
+(cond)
+(cond (= 1 2) 1)
+(doc get-in)
+(cons [1 2 3] 1)
+(cons 1 [1 2])
+(get-in [[1]] [1 1])
+(doc condp)
+(doc cond)
+(condp = 1 1 1)
+(condp = 1 2 :else 3)
+(condp = 1 2 2 :else 3)
+(doc condp)
+(condp = 1 2 2 3)
+(doc remove)
+(doc update-in)
+(update-in [[1]] [0 0] inc)
+(def world (atom {:grid [[1]]}))
+(swap! world update-in [:grid] assoc-in 0 0 2)
+(swap! world update-in [:grid] assoc-in [0 0] 2)
+(swap! world update-in [:grid] assoc-in [0 0] 1)
+(= {:a 1} {:a 1})
+(= {:a 1} {:a 2})
+(doc update-in)
+(swap! world update-in :grid assoc-in [0 0] 1)
+ls
+(doc merge)
+(doc {:a 1 :b 2 :c 3} {:a 2} {:b 3} {:c 4})
+(merge {:a 1 :b 2 :c 3} {:a 2} {:b 3} {:c 4})
+(doc repeat)
+(get-in [1 2 3] 0)
+(doc get-in)
+(get-in [1 2 3] [0])
+([1] 1)
+(get [1] 1)
+(format "%s" nil)
+(format "%sa" nil)
+(str nil)
+(str "a" nil "b")
+(name :a)
+(doc concat)
+(doc mapcat)
+(doc max)
+(max 1 2 3)
+(max 1 2 3 3)
+(doc mapcat)
+(mapcat identity [[1 2 3] [1 2 3]])
+(clojure.string/join '())
+(doc clojure.string/split)
+(hash-map ["a" 1])
+(doc key)
+(key "a")
+(keyword "a")
+(doc for)
+(doc loop)
+(find-doc "indexed")
+(update-in {:a 1} [:a] + 2)
+(/ 2 3)
+(doc not)
+(doc if)
+(quot 12 10)
+(shuffle ["Michael", "Peter", 
+"Katherine", "Margaret"])
+(shuffle ["Michael", "Peter", "Katherine", "Margaret"])
+(for [x "abc"] 1)
+(for [x "abc"] x)
+(str/split "aaaaa
+aaaaa
+aaaaa")
+clojure.string/split
+(clojure.string/split "aaaaa
+aaaaa
+aaaaa")
+(clojure.string/split "aaaaa
+aaaaa")
+(clojure.string/split "aaaaa
+aaaaa
+aaaaa" "\n")
+(clojure.string/split "aaaaa
+aaaaa
+aaaaa" \n)
+(clojure.string/split "a1b1c" #\1)
+(clojure.string/split "a1b1c" \1)
+(clojure.string/split "aaaaa
+aaaaa
+aaaaa" #\n)
+(clojure.string/split "aaaaa
+aaaaa
+aaaaa" #"\n")
+(count "abc")
+(map (fn [a b c] [a b c]) [1 2 3] [4 5 6] [7 8 9])
+(get-in [1 2 3] nil)
+(get-in [[1 2 3]] nil)
+(get-in [[1 2 3]] nil nil nil)
+(get-in [[1 2 3]] [nil nil nil])
+(doc get-in)
+(doc reduce)
+(doc update-in)
+(doc get-in)
+(get-in [[[1]]] [0 0])
+(get-in [[[1]]] [0 0 0])
+(doc cons)
+(doc conj)
+(conj [1 2 3] 1)
+(doc reduce)
+(doc constantly)
+(doc repeat)
+(map vec (repeat 0) (range 4))
+(map vector (repeat 0) (range 4))
+(defn parse-neighbors [s]
+)
+split
+(require 'clojure.string :as str)
+(require 'clojure.string :as 'str)
+(require ['clojure.string :as 'str])
+str/split
+(str/split-lines "aaa\naaa")
+(defn parse-neighbors [s]
+(str/split-lines s))
+(def s1
+"0,0 4,0
+0,1 4,1
+0,2 4,2
+0,3 4,3
+0,4 4,4")
+s1
+(str/split-lines s1)
+(parse-neighbors s1)
+(defn pn [s]
+)
+(defn pn [s]
+(let [pairs (str/split-lines s)]
+(map #(str/split % #" ") pairs)))
+(pn s1)
+(defn pn [s]
+(partition 2 (partition 2 (str/split (str/split-lines s) #" "))))
+(def s2
+"0 0 0 1
+")
+(def s2
+"0 0 4 0
+0 1 4 1")
+(pn s2)
+(defn pn [s]
+(partition 2 (partition 2 (map str/split (str/split-lines s) #" "))))
+(pn s2)
+(defn pn [s]
+)
+(defn split [sep s] (str/split s sep))
+(split #" " "1 1")
+(defn pn [s]
+(partition 2 (partition 2 (map split (str/split-lines s) #" "))))
+(pn s2)
+(partition 2 (partition 2 (map (partial split #" " (str/split-lines s)))))
+(defn pn [s]
+(partition 2 (partition 2 (map (partial split #" ") (str/split-lines s)))))
+(pn s2)
+s2
+(defn pn [s]
+(partition 2 (partition 2 (mapcat (partial split #" ") (str/split-lines s)))))
+(pn s2)
+(defn pn [s]
+(partition 2 (partition 2 (map #(Math/parseInt %) (mapcat (partial split #" ") (str/split-lines s))))))
+(defn fooint 1)
+(defn fooint [_] 1)
+(defn pn [s]
+(partition 2 (partition 2 (map fooint (mapcat (partial split #" ") (str/split-lines s))))))
+(pn s2)
+(str/split
+"aaaa
+aaaa
+aaaa" #"^$")
+"aaaa
+aaaa
+aaaa"
+(str/split
+"aaaa
+aaaa
+aaaa" #"\n\n")
+(require ['goog.string :as 'gs])
+(require '[goog.string :as gs])
+(shuffle ["Michael" "Peter"])
+{\a 1}
+({\a 1} \a)
+({\a 2} \a)
+({\a 3 \b 2} \a)
+({\a 3 \b 2} \b)
+(quot 20 6)
